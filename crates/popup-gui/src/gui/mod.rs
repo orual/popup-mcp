@@ -621,14 +621,17 @@ fn render_single_element(
                 let selections_snapshot = if let Some(selections) = state.get_multichoice_mut(id) {
                     ui.horizontal(|ui| {
                         let label_width = 140.0;
-                        ui.add_sized(
-                            [label_width, 24.0],
-                            egui::Label::new(
-                                RichText::new(multi)
-                                    .color(ctx.theme.matrix_green)
-                                    .strong()
-                                    .size(15.0),
-                            ),
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(label_width, 24.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.add(egui::Label::new(
+                                    RichText::new(multi)
+                                        .color(ctx.theme.matrix_green)
+                                        .strong()
+                                        .size(15.0),
+                                ));
+                            },
                         );
 
                         ui.horizontal(|ui| {
@@ -730,9 +733,12 @@ fn render_single_element(
                 let available = ui.available_width();
                 ui.horizontal_wrapped(|ui| {
                     let label_width = (available * 0.35).min(180.0).max(100.0);
-                    ui.add_sized(
-                        [label_width, 24.0],
-                        egui::Label::new(RichText::new(select).color(ctx.theme.electric_blue).strong()).wrap(),
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(label_width, 24.0),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            ui.add(egui::Label::new(RichText::new(select).color(ctx.theme.electric_blue).strong()).wrap());
+                        },
                     );
 
                     if let Some(selected) = state.get_choice_mut(id) {
@@ -832,14 +838,17 @@ fn render_single_element(
             ui.horizontal(|ui| {
                 ui.set_min_height(24.0);
                 let label_width = 140.0;
-                ui.add_sized(
-                    [label_width, 24.0],
-                    egui::Label::new(
-                        RichText::new(slider)
-                            .color(ctx.theme.warning_orange)
-                            .strong()
-                            .size(15.0),
-                    ),
+                ui.allocate_ui_with_layout(
+                    egui::vec2(label_width, 24.0),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        ui.add(egui::Label::new(
+                            RichText::new(slider)
+                                .color(ctx.theme.warning_orange)
+                                .strong()
+                                .size(15.0),
+                        ));
+                    },
                 );
 
                 if let Some(value) = state.get_number_mut(id) {
