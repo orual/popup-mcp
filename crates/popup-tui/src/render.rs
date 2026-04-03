@@ -630,11 +630,47 @@ pub(crate) fn estimate_single_element_height(element: &Element, app: &TuiApp, wi
             let p = Paragraph::new(text).wrap(Wrap { trim: false });
             (p.line_count(width) as u16).max(1)
         }
-        Element::Check { .. } => 1,
+        Element::Check { id, reveals, .. } => {
+            let mut h = 1u16;
+            if app.state.get_boolean(id) && !reveals.is_empty() {
+                h += estimate_elements_height_width(reveals, app, width) + 1;
+            }
+            h
+        }
         Element::Input { rows, .. } => 1 + rows.unwrap_or(1).max(1) as u16 + 2,
         Element::Slider { .. } => 4,
-        Element::Select { options, .. } => 1 + options.len() as u16,
-        Element::Multi { options, .. } => 1 + options.len() as u16,
+        Element::Select { id, options, option_children, reveals, .. } => {
+            let mut h = 1 + options.len() as u16;
+            if let Some(Some(idx)) = app.state.get_choice(id) {
+                if let Some(opt) = options.get(idx) {
+                    if let Some(children) = option_children.get(opt.value()) {
+                        h += estimate_elements_height_width(children, app, width);
+                    }
+                }
+                if !reveals.is_empty() {
+                    h += estimate_elements_height_width(reveals, app, width);
+                }
+            }
+            h
+        }
+        Element::Multi { id, options, option_children, reveals, .. } => {
+            let mut h = 1 + options.len() as u16;
+            if let Some(selections) = app.state.get_multichoice(id) {
+                for (i, &selected) in selections.iter().enumerate() {
+                    if selected {
+                        if let Some(opt) = options.get(i) {
+                            if let Some(children) = option_children.get(opt.value()) {
+                                h += estimate_elements_height_width(children, app, width);
+                            }
+                        }
+                    }
+                }
+                if selections.iter().any(|&s| s) && !reveals.is_empty() {
+                    h += estimate_elements_height_width(reveals, app, width);
+                }
+            }
+            h
+        }
         Element::Group { elements, .. } => {
             estimate_elements_height_width(elements, app, width.saturating_sub(2)) + 2
         }
