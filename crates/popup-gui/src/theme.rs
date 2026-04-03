@@ -20,7 +20,7 @@ pub struct Theme {
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::solarized_dark() // Default to Solarized Dark
+        Self::rose_pine() // Default to Rosé Pine
     }
 }
 
@@ -79,6 +79,42 @@ impl Theme {
             text_secondary: Color32::from_rgb(101, 123, 131), // base0 (secondary content)
             base2: Color32::from_rgb(238, 232, 213),    // base2
             base3: Color32::from_rgb(253, 246, 227),    // base3 (brightest content)
+        }
+    }
+
+    pub fn rose_pine() -> Self {
+        Self {
+            // Rosé Pine colour palette
+            neon_cyan: Color32::from_rgb(156, 207, 216),    // foam
+            neon_pink: Color32::from_rgb(235, 188, 186),    // rose
+            neon_purple: Color32::from_rgb(196, 167, 231),  // iris
+            electric_blue: Color32::from_rgb(49, 116, 143), // pine
+            matrix_green: Color32::from_rgb(156, 207, 216), // foam (reused)
+            warning_orange: Color32::from_rgb(234, 154, 151), // love
+            deep_black: Color32::from_rgb(25, 23, 36),      // base
+            dark_gray: Color32::from_rgb(38, 35, 53),       // surface
+            text_primary: Color32::from_rgb(224, 222, 244), // text
+            text_secondary: Color32::from_rgb(144, 140, 170), // subtle
+            base2: Color32::from_rgb(224, 222, 244),        // text
+            base3: Color32::from_rgb(224, 222, 244),        // text
+        }
+    }
+
+    pub fn rose_pine_moon() -> Self {
+        Self {
+            // Rosé Pine Moon colour palette
+            neon_cyan: Color32::from_rgb(156, 207, 216),    // foam
+            neon_pink: Color32::from_rgb(234, 154, 151),    // love
+            neon_purple: Color32::from_rgb(196, 167, 231),  // iris
+            electric_blue: Color32::from_rgb(62, 143, 176), // pine
+            matrix_green: Color32::from_rgb(156, 207, 216), // foam
+            warning_orange: Color32::from_rgb(234, 154, 151), // love
+            deep_black: Color32::from_rgb(35, 33, 54),      // base
+            dark_gray: Color32::from_rgb(57, 53, 82),       // surface
+            text_primary: Color32::from_rgb(224, 222, 244), // text
+            text_secondary: Color32::from_rgb(144, 140, 170), // subtle
+            base2: Color32::from_rgb(224, 222, 244),        // text
+            base3: Color32::from_rgb(224, 222, 244),        // text
         }
     }
 

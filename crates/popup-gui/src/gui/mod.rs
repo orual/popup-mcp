@@ -72,11 +72,10 @@ pub fn render_popup(definition: PopupDefinition) -> Result<PopupResult> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            // Start with a default size, it will be resized on the first frame
             .with_inner_size(initial_size)
-            // Allow the window to be resized by the user
             .with_resizable(true)
-            .with_position(egui::Pos2::new(100.0, 100.0)), // Will center manually if needed
+            .with_position(egui::Pos2::new(100.0, 100.0))
+            .with_app_id("popup-mcp"),
         ..Default::default()
     };
 
@@ -166,6 +165,11 @@ impl eframe::App for PopupApp {
         // Handle Escape key for cancel
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
             self.state.button_clicked = Some("cancel".to_string());
+        }
+
+        // Handle Ctrl+Enter for submit
+        if ctx.input(|i| i.modifiers.command && i.key_pressed(Key::Enter)) {
+            self.state.button_clicked = Some("submit".to_string());
         }
 
         // Check if we should close
@@ -590,7 +594,9 @@ fn render_single_element(
         Element::Text { text, .. } => {
             // Use element path as unique ID to prevent collisions in conditionals
             ui.push_id(format!("text_{}", element_path), |ui| {
-                ui.label(RichText::new(text).color(ctx.theme.text_primary));
+                let label = egui::Label::new(RichText::new(text).color(ctx.theme.text_primary))
+                    .wrap();
+                ui.add(label);
             });
         }
 
@@ -713,7 +719,6 @@ fn render_single_element(
         }
 
         Element::Select {
-// ... (omitting Select for now as it's fine)
             select,
             id,
             options,
@@ -722,11 +727,12 @@ fn render_single_element(
             ..
         } => {
             ui.vertical(|ui| {
-                ui.horizontal(|ui| {
-                    let label_width = 140.0;
+                let available = ui.available_width();
+                ui.horizontal_wrapped(|ui| {
+                    let label_width = (available * 0.35).min(180.0).max(100.0);
                     ui.add_sized(
                         [label_width, 24.0],
-                        egui::Label::new(RichText::new(select).color(ctx.theme.electric_blue).strong()),
+                        egui::Label::new(RichText::new(select).color(ctx.theme.electric_blue).strong()).wrap(),
                     );
 
                     if let Some(selected) = state.get_choice_mut(id) {
@@ -735,8 +741,10 @@ fn render_single_element(
                             None => "(none selected)",
                         };
 
+                        let combo_width = (available - label_width - 16.0).max(120.0);
                         let response = egui::ComboBox::from_id_salt(id)
                             .selected_text(RichText::new(selected_text).color(ctx.theme.base2))
+                            .width(combo_width)
                             .show_ui(ui, |ui| {
                                 if ui
                                     .selectable_label(selected.is_none(), "(none selected)")
