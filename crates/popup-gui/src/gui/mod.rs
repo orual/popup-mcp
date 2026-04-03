@@ -110,6 +110,7 @@ struct PopupApp {
     first_interactive_widget_id: Option<Id>,
     first_widget_focused: bool,
     last_size: Vec2,
+    last_content_height: f32,
     frame_count: usize,
     markdown_cache: CommonMarkCache,
     condition_cache: HashMap<String, Option<ConditionExpr>>,
@@ -128,7 +129,8 @@ impl PopupApp {
             result,
             first_interactive_widget_id: None,
             first_widget_focused: false,
-            last_size: Vec2::ZERO, // Initialize to zero to force resize on first frame
+            last_size: Vec2::ZERO,
+            last_content_height: 0.0,
             frame_count: 0,
             markdown_cache: CommonMarkCache::default(),
             condition_cache: HashMap::new(),
@@ -301,7 +303,6 @@ impl eframe::App for PopupApp {
         }
 
         // Constraint 2: Expand to fit content (up to max)
-        // Note: desired_width is often limited by current_size.x, but we still check it
         if desired_width > target_size.x {
             target_size.x = desired_width.min(1000.0);
         }
@@ -309,8 +310,12 @@ impl eframe::App for PopupApp {
             target_size.y = desired_height.min(800.0);
         }
 
-        // Constraint 3: Initial Shrink (snap to fit)
-        if self.frame_count < 5 {
+        // Detect if content height changed significantly (e.g. reveals toggled)
+        let content_height_changed = (desired_height - self.last_content_height).abs() > 20.0;
+        self.last_content_height = desired_height;
+
+        // Constraint 3: Snap to fit on initial frames OR when content changes
+        if self.frame_count < 5 || content_height_changed {
             target_size.x = desired_width.max(preferred_width).min(1000.0);
             target_size.y = desired_height.clamp(200.0, 800.0);
         }
