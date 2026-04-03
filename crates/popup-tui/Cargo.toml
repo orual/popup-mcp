@@ -1,0 +1,16 @@
+[package]
+name = "popup-tui"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+popup-common = { workspace = true }
+
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+
+ratatui = { version = "0.30", features = ["unstable-rendered-line-info"] }
+crossterm = "0.29"
+tui-markdown = "0.3"
+tui-input = "0.15"
+ratatui-textarea = "0.8"

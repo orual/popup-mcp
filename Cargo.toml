@@ -2,6 +2,7 @@
 members = [
     "crates/popup-common",
     "crates/popup-gui",
+    "crates/popup-tui",
 ]
 resolver = "2"
 
@@ -22,3 +23,4 @@ tokio = { version = "1.42", features = ["rt", "rt-multi-thread", "macros"] }
 
 # Workspace crates
 popup-common = { path = "crates/popup-common" }
+popup-tui = { path = "crates/popup-tui" }

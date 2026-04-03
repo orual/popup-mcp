@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 # Workspace crates
 popup-common = { workspace = true }
+popup-tui = { workspace = true }
 
 # Workspace dependencies
 anyhow = { workspace = true }
@@ -41,6 +42,7 @@ mcpr = "0.2.3"
 which = "7"
 log = "0.4"
 clap = { version = "4.5", features = ["derive"] }
+uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 handlebars = "6.3"
 toml = "0.9"
