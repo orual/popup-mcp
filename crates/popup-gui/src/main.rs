@@ -61,25 +61,34 @@ fn detect_render_mode(args: &Args) -> Result<RenderMode> {
         return Ok(RenderMode::Gui);
     }
 
-    // Auto-detect with SSH awareness:
-    // - SSH sessions always use TUI (the display server is on the remote host, not the client)
-    // - Local sessions prefer GUI when a display server is available
-    // - Zellij is required for TUI mode (raw terminal would conflict with Claude Code)
+    // Auto-detect with SSH/remote awareness:
+    // 1. SSH env vars (fast path for direct SSH sessions)
+    // 2. Remote `who` entries + zellij (catches zellij-attach-over-SSH)
+    // 3. Display server available → GUI
+    // 4. Zellij available → TUI (local, no display)
     let is_ssh = std::env::var("SSH_CONNECTION").is_ok()
         || std::env::var("SSH_TTY").is_ok();
     let has_display = std::env::var("WAYLAND_DISPLAY").is_ok()
         || std::env::var("DISPLAY").is_ok();
     let has_zellij = std::env::var("ZELLIJ").is_ok();
+    let has_remote_users = has_remote_who_entries();
 
+    // Direct SSH session → TUI
+    if is_ssh && has_zellij {
+        return Ok(RenderMode::ZellijTui);
+    }
     if is_ssh {
-        return if has_zellij {
-            Ok(RenderMode::ZellijTui)
-        } else {
-            bail!(
-                "SSH session detected but no zellij session (ZELLIJ) found. \
-                 Run inside a zellij session for TUI popups over SSH, or use --gui to force GUI."
-            )
-        };
+        bail!(
+            "SSH session detected but no zellij session (ZELLIJ) found. \
+             Run inside a zellij session for TUI popups over SSH, or use --gui to force GUI."
+        )
+    }
+
+    // Zellij-attach-over-SSH: we're in zellij and someone is remoted in.
+    // The display env vars are from the host session, not the remote client,
+    // so prefer TUI to show the popup where the user actually is.
+    if has_remote_users && has_zellij {
+        return Ok(RenderMode::ZellijTui);
     }
 
     if has_display {
@@ -94,6 +103,29 @@ fn detect_render_mode(args: &Args) -> Result<RenderMode> {
         "No display server (WAYLAND_DISPLAY/DISPLAY) and no zellij session (ZELLIJ) detected. \
          Use --gui or --tui to force a renderer, or run inside a zellij session for TUI mode."
     )
+}
+
+/// Check if `who` reports any remote (non-local) login sessions.
+/// This catches the case where someone SSHed in and attached to an existing
+/// zellij session — SSH_CONNECTION won't be set in the zellij env, but `who`
+/// will show the remote IP.
+fn has_remote_who_entries() -> bool {
+    use std::process::Command;
+    let output = match Command::new("who").output() {
+        Ok(o) => o,
+        Err(_) => return false,
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout.lines().any(|line| {
+        // `who` format: "user pts/N YYYY-MM-DD HH:MM (IP)"
+        // Local sessions show (:0), (:1), etc. Remote sessions show an IP.
+        if let Some(paren_start) = line.rfind('(') {
+            let host = &line[paren_start + 1..].trim_end_matches(')');
+            !host.starts_with(':') && !host.is_empty()
+        } else {
+            false
+        }
+    })
 }
 
 fn render_definition(
