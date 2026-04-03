@@ -190,7 +190,8 @@ fn run_zellij_tui(json_input: &str) -> Result<()> {
     // Find our own binary path
     let exe = std::env::current_exe()?;
 
-    // Spawn in zellij floating pane
+    // Spawn in zellij floating pane.
+    // Suppress stdout — zellij prints the pane ID which would pollute our JSON output.
     let status = Command::new("zellij")
         .args([
             "action",
@@ -204,6 +205,7 @@ fn run_zellij_tui(json_input: &str) -> Result<()> {
         .arg(&json_path)
         .args(["--result-pipe"])
         .arg(&fifo_path)
+        .stdout(std::process::Stdio::null())
         .status()?;
 
     if !status.success() {
