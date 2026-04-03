@@ -24,7 +24,10 @@ pub fn draw(frame: &mut Frame, app: &TuiApp) {
     .split(area);
 
     draw_title(frame, chunks[0], app);
-    draw_elements(frame, chunks[1], app, &app.definition.elements, 0);
+    // Clear the content area before drawing to prevent stale renders
+    // when elements resize (e.g., reveals toggling).
+    frame.render_widget(ratatui::widgets::Clear, chunks[1]);
+    draw_elements_with_offset(frame, chunks[1], app, &app.definition.elements, 0, app.scroll_offset);
     draw_status_bar(frame, chunks[2]);
 }
 
@@ -52,6 +55,8 @@ fn draw_status_bar(frame: &mut Frame, area: Rect) {
     frame.render_widget(bar, area);
 }
 
+/// Draw nested elements (reveals, option_children, groups) — no scroll offset.
+/// These are already positioned at correct screen coordinates by their parent.
 fn draw_elements(
     frame: &mut Frame,
     area: Rect,
@@ -59,7 +64,7 @@ fn draw_elements(
     elements: &[Element],
     indent: u16,
 ) {
-    draw_elements_with_offset(frame, area, app, elements, indent, app.scroll_offset);
+    draw_elements_with_offset(frame, area, app, elements, indent, 0);
 }
 
 fn draw_elements_with_offset(
@@ -70,8 +75,9 @@ fn draw_elements_with_offset(
     indent: u16,
     scroll_offset: u16,
 ) {
-    // `virtual_y` tracks the absolute y position as if the content area were unlimited.
-    // Elements above the scroll_offset are skipped; elements below the visible window are clipped.
+    // virtual_y tracks position in the full (possibly taller than viewport) content.
+    // We give each element the full remaining viewport height so it can draw everything
+    // it needs, then advance virtual_y by its actual returned height.
     let mut virtual_y: i32 = 0;
 
     for element in elements {
@@ -80,29 +86,32 @@ fn draw_elements_with_offset(
             continue;
         }
 
-        let element_height = estimate_single_element_height(element, app, area.width.saturating_sub(indent)) as i32;
         let top = virtual_y - scroll_offset as i32;
 
-        if top + element_height > 0 && top < area.height as i32 {
-            // Some part of this element is visible
-            let screen_y = area.y as i32 + top;
-            let clipped_y = screen_y.max(area.y as i32) as u16;
-            let clipped_height = (screen_y + element_height)
-                .min(area.y as i32 + area.height as i32)
-                - clipped_y as i32;
+        // Give the element generous height — the full remaining viewport.
+        // The element's own draw function handles internal clipping.
+        let screen_y = (area.y as i32 + top).max(area.y as i32);
+        let available_height = (area.y as i32 + area.height as i32) - screen_y as i32;
 
-            if clipped_height > 0 {
-                let remaining = Rect::new(
-                    area.x + indent,
-                    clipped_y,
-                    area.width.saturating_sub(indent),
-                    clipped_height as u16,
-                );
-                draw_single_element(frame, remaining, app, element, indent);
-            }
+        if available_height > 0 && top < area.height as i32 {
+            let remaining = Rect::new(
+                area.x + indent,
+                screen_y as u16,
+                area.width.saturating_sub(indent),
+                available_height as u16,
+            );
+
+            let used_height = draw_single_element(frame, remaining, app, element, indent);
+            virtual_y += used_height as i32 + 1; // +1 gap
+        } else if top >= area.height as i32 {
+            // Past the bottom of the viewport — stop drawing
+            break;
+        } else {
+            // Above the viewport (scrolled past) — still need to advance virtual_y
+            // Use estimate since we can't draw to get actual height
+            let est = estimate_single_element_height(element, app, area.width.saturating_sub(indent));
+            virtual_y += est as i32 + 1;
         }
-
-        virtual_y += element_height as i32 + 1; // +1 for gap
     }
 }
 
@@ -198,17 +207,18 @@ fn draw_check(
 
     let mut total_height = 1u16;
 
-    // Render reveals if checked
+    // Render reveals if checked (with 1-line gap after checkbox)
     if checked && !reveals.is_empty() {
+        total_height += 1; // gap
+        let reveals_h = estimate_elements_height(reveals, app);
         let reveals_area = Rect::new(
             area.x,
             area.y + total_height,
             area.width,
-            area.height.saturating_sub(total_height),
+            reveals_h.min(area.height.saturating_sub(total_height)),
         );
         draw_elements(frame, reveals_area, app, reveals, indent + 2);
-        // Estimate height of reveals (simplified — accurate tracking would need layout pass)
-        total_height += estimate_elements_height(reveals, app) + 1;
+        total_height += reveals_h;
     }
 
     total_height
@@ -227,7 +237,7 @@ fn draw_input(
     let label_style = if is_focused { FOCUSED_STYLE } else { LABEL_STYLE };
 
     // Label
-    let label_line = Paragraph::new(Span::styled(label, label_style));
+    let label_line = Paragraph::new(label).style(label_style);
     if area.height < 2 {
         return 0;
     }
@@ -338,7 +348,7 @@ fn draw_select(
 
     // Label
     frame.render_widget(
-        Paragraph::new(Span::styled(label, label_style)),
+        Paragraph::new(Line::styled(label.to_string(), label_style)),
         Rect::new(area.x, area.y, area.width, 1.min(area.height)),
     );
 
@@ -365,8 +375,9 @@ fn draw_select(
         })
         .collect();
 
+    let list_indent: u16 = 2;
     let list_height = (options.len() as u16).min(area.height.saturating_sub(1));
-    let list_area = Rect::new(area.x, area.y + 1, area.width, list_height);
+    let list_area = Rect::new(area.x + list_indent, area.y + 1, area.width.saturating_sub(list_indent), list_height);
 
     let highlight_style = if is_focused {
         Style::new().bg(Color::DarkGray)
@@ -385,14 +396,15 @@ fn draw_select(
         if let Some(opt) = options.get(idx) {
             if let Some(children) = option_children.get(opt.value()) {
                 if !children.is_empty() {
+                    let ch = estimate_elements_height(children, app);
                     let children_area = Rect::new(
                         area.x,
                         area.y + total_height,
                         area.width,
-                        area.height.saturating_sub(total_height),
+                        ch.min(area.height.saturating_sub(total_height)),
                     );
                     draw_elements(frame, children_area, app, children, indent + 2);
-                    total_height += estimate_elements_height(children, app);
+                    total_height += ch;
                 }
             }
         }
@@ -400,14 +412,15 @@ fn draw_select(
 
     // Reveals
     if selected_idx.is_some() && !reveals.is_empty() {
+        let rh = estimate_elements_height(reveals, app);
         let reveals_area = Rect::new(
             area.x,
             area.y + total_height,
             area.width,
-            area.height.saturating_sub(total_height),
+            rh.min(area.height.saturating_sub(total_height)),
         );
         draw_elements(frame, reveals_area, app, reveals, indent + 2);
-        total_height += estimate_elements_height(reveals, app);
+        total_height += rh;
     }
 
     total_height
@@ -432,7 +445,7 @@ fn draw_multi(
 
     // Label
     frame.render_widget(
-        Paragraph::new(Span::styled(label, label_style)),
+        Paragraph::new(label).style(label_style),
         Rect::new(area.x, area.y, area.width, 1.min(area.height)),
     );
 
@@ -460,8 +473,9 @@ fn draw_multi(
         })
         .collect();
 
+    let list_indent: u16 = 2;
     let list_height = (options.len() as u16).min(area.height.saturating_sub(1));
-    let list_area = Rect::new(area.x, area.y + 1, area.width, list_height);
+    let list_area = Rect::new(area.x + list_indent, area.y + 1, area.width.saturating_sub(list_indent), list_height);
 
     let highlight_style = if is_focused {
         Style::new().bg(Color::DarkGray)
@@ -481,14 +495,15 @@ fn draw_multi(
             if let Some(opt) = options.get(i) {
                 if let Some(children) = option_children.get(opt.value()) {
                     if !children.is_empty() {
+                        let ch = estimate_elements_height(children, app);
                         let children_area = Rect::new(
                             area.x,
                             area.y + total_height,
                             area.width,
-                            area.height.saturating_sub(total_height),
+                            ch.min(area.height.saturating_sub(total_height)),
                         );
                         draw_elements(frame, children_area, app, children, indent + 2);
-                        total_height += estimate_elements_height(children, app);
+                        total_height += ch;
                     }
                 }
             }
@@ -497,14 +512,15 @@ fn draw_multi(
 
     // Reveals
     if selections.iter().any(|&s| s) && !reveals.is_empty() {
+        let rh = estimate_elements_height(reveals, app);
         let reveals_area = Rect::new(
             area.x,
             area.y + total_height,
             area.width,
-            area.height.saturating_sub(total_height),
+            rh.min(area.height.saturating_sub(total_height)),
         );
         draw_elements(frame, reveals_area, app, reveals, indent + 2);
-        total_height += estimate_elements_height(reveals, app);
+        total_height += rh;
     }
 
     total_height
@@ -525,7 +541,7 @@ fn draw_numeric(
     // Label with range hint
     let label_text = format!("{} ({} - {})", label, min as i32, max as i32);
     frame.render_widget(
-        Paragraph::new(Span::styled(&label_text, label_style)),
+        Paragraph::new(label_text.as_str()).style(label_style),
         Rect::new(area.x, area.y, area.width, 1.min(area.height)),
     );
 
@@ -612,7 +628,7 @@ fn estimate_elements_height_width(elements: &[Element], app: &TuiApp, width: u16
         if !app.is_element_visible(when) {
             continue;
         }
-        height += estimate_single_element_height(element, app, width) + 1; // +1 for gap
+        height += estimate_single_element_height(element, app, width) + 1; // +1 gap, matches draw loop
     }
     height
 }
@@ -633,7 +649,7 @@ pub(crate) fn estimate_single_element_height(element: &Element, app: &TuiApp, wi
         Element::Check { id, reveals, .. } => {
             let mut h = 1u16;
             if app.state.get_boolean(id) && !reveals.is_empty() {
-                h += estimate_elements_height_width(reveals, app, width) + 1;
+                h += 1 + estimate_elements_height_width(reveals, app, width); // +1 gap before reveals
             }
             h
         }
