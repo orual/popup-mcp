@@ -117,7 +117,7 @@ impl TuiApp {
     /// Adjust `scroll_offset` so the focused element is visible within `viewport_height` lines.
     /// Call this after any focus change or layout rebuild. Uses the same element height
     /// estimates as the renderer so scroll tracking stays consistent.
-    pub fn update_scroll(&mut self, viewport_height: u16) {
+    pub fn update_scroll(&mut self, viewport_height: u16, viewport_width: u16) {
         let Some(focused_id) = self.focused_id().map(|s| s.to_string()) else {
             return;
         };
@@ -129,7 +129,7 @@ impl TuiApp {
             &self.definition.elements,
             self,
             &focused_id,
-            80, // reasonable default width for scroll estimation
+            viewport_width,
             &mut virtual_y,
             &mut result,
         );
@@ -434,8 +434,10 @@ pub fn run(definition: PopupDefinition) -> Result<PopupResult> {
         app.rebuild_focusable_ids();
 
         // Update scroll before drawing so the focused element is always visible.
-        let viewport_height = terminal.size()?.height.saturating_sub(4); // minus title+statusbar
-        app.update_scroll(viewport_height);
+        let size = terminal.size()?;
+        let viewport_height = size.height.saturating_sub(4); // minus title+statusbar
+        let viewport_width = size.width;
+        app.update_scroll(viewport_height, viewport_width);
 
         terminal.draw(|frame| {
             render::draw(frame, &app);
@@ -672,33 +674,7 @@ fn find_element_virtual_y(
     }
 }
 
-/// Height estimate for a single element used in scroll tracking.
-/// Mirrors `estimate_elements_height` in render.rs but for one element.
+/// Delegate to the single source of truth in render.rs.
 fn estimate_element_height_for_scroll(element: &Element, app: &TuiApp, width: u16) -> u16 {
-    match element {
-        Element::Text { text, .. } => {
-            let p = ratatui::widgets::Paragraph::new(text.as_str())
-                .wrap(ratatui::widgets::Wrap { trim: false });
-            (p.line_count(width) as u16).max(1)
-        }
-        Element::Markdown { markdown, .. } => {
-            let text = tui_markdown::from_str(markdown);
-            let p = ratatui::widgets::Paragraph::new(text)
-                .wrap(ratatui::widgets::Wrap { trim: false });
-            (p.line_count(width) as u16).max(1)
-        }
-        Element::Check { .. } => 1,
-        Element::Input { rows, .. } => 1 + rows.unwrap_or(1).max(1) as u16 + 2,
-        Element::Slider { .. } => 4,
-        Element::Select { options, .. } => 1 + options.len() as u16,
-        Element::Multi { options, .. } => 1 + options.len() as u16,
-        Element::Group { elements, .. } => {
-            let inner: u16 = elements
-                .iter()
-                .filter(|e| app.is_element_visible(element_when(e)))
-                .map(|e| estimate_element_height_for_scroll(e, app, width.saturating_sub(2)) + 1)
-                .sum();
-            inner + 2 // borders
-        }
-    }
+    crate::render::estimate_single_element_height(element, app, width)
 }

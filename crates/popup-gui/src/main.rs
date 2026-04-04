@@ -198,6 +198,8 @@ fn run_zellij_tui(json_input: &str) -> Result<()> {
             "new-pane",
             "--floating",
             "--close-on-exit",
+            "--width", "80%",
+            "--height", "80%",
             "--",
         ])
         .arg(&exe)
