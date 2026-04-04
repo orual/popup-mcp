@@ -218,11 +218,11 @@ fn draw_check(
     let style = if is_focused { FOCUSED_STYLE } else { LABEL_STYLE };
 
     let line = Line::from(vec![
-        Span::styled(marker, style),
+        Span::raw(marker),
         Span::raw(" "),
-        Span::styled(label, style),
+        Span::raw(label),
     ]);
-    let paragraph = Paragraph::new(line);
+    let paragraph = Paragraph::new(line).style(style);
     let render_area = Rect::new(area.x, area.y, area.width, 1.min(area.height));
     frame.render_widget(paragraph, render_area);
 
@@ -257,12 +257,16 @@ fn draw_input(
     let is_focused = app.focused_id() == Some(id);
     let label_style = if is_focused { FOCUSED_STYLE } else { LABEL_STYLE };
 
-    // Label
-    let label_line = Paragraph::new(label).style(label_style);
-    if area.height < 2 {
-        return 0;
+    // Label (skip if empty)
+    let has_label = !label.is_empty();
+    let label_rows = if has_label { 1u16 } else { 0 };
+    if has_label {
+        let label_line = Paragraph::new(label).style(label_style);
+        if area.height < 2 {
+            return 0;
+        }
+        frame.render_widget(label_line, Rect::new(area.x, area.y, area.width, 1));
     }
-    frame.render_widget(label_line, Rect::new(area.x, area.y, area.width, 1));
 
     let input_height = rows.unwrap_or(1).max(1) as u16;
     let border_style = if is_focused {
@@ -272,9 +276,9 @@ fn draw_input(
     };
     let input_area = Rect::new(
         area.x,
-        area.y + 1,
+        area.y + label_rows,
         area.width,
-        (input_height + 2).min(area.height.saturating_sub(1)), // +2 for borders
+        (input_height + 2).min(area.height.saturating_sub(label_rows)), // +2 for borders
     );
 
     match app.input_widgets.get(id) {
@@ -347,7 +351,7 @@ fn draw_input(
         }
     }
 
-    1 + input_height + 2 // label + content + borders
+    label_rows + input_height + 2 // label + content + borders
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -677,7 +681,10 @@ pub(crate) fn estimate_single_element_height(element: &Element, app: &TuiApp, wi
             }
             h
         }
-        Element::Input { rows, .. } => 1 + rows.unwrap_or(1).max(1) as u16 + 2,
+        Element::Input { input, rows, .. } => {
+            let label_h = if input.is_empty() { 0u16 } else { 1 };
+            label_h + rows.unwrap_or(1).max(1) as u16 + 2
+        }
         Element::Slider { .. } => 4,
         Element::Select { id, options, option_children, reveals, .. } => {
             let mut h = 1 + options.len() as u16;
