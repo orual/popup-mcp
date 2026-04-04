@@ -28,7 +28,10 @@ pub fn draw(frame: &mut Frame, app: &TuiApp) {
     // when elements resize (e.g., reveals toggling).
     frame.render_widget(ratatui::widgets::Clear, chunks[1]);
     draw_elements_with_offset(frame, chunks[1], app, &app.definition.elements, 0, app.scroll_offset);
-    draw_status_bar(frame, chunks[2]);
+
+    let content_height = estimate_elements_height_width(&app.definition.elements, app, chunks[1].width);
+    let viewport_height = chunks[1].height;
+    draw_status_bar(frame, chunks[2], app, content_height, viewport_height);
 }
 
 fn draw_title(frame: &mut Frame, area: Rect, app: &TuiApp) {
@@ -38,8 +41,8 @@ fn draw_title(frame: &mut Frame, area: Rect, app: &TuiApp) {
     frame.render_widget(title, area);
 }
 
-fn draw_status_bar(frame: &mut Frame, area: Rect) {
-    let bar = Paragraph::new(Line::from(vec![
+fn draw_status_bar(frame: &mut Frame, area: Rect, app: &TuiApp, content_height: u16, viewport_height: u16) {
+    let mut spans = vec![
         Span::styled("Enter", Style::new().fg(Color::Green).add_modifier(Modifier::BOLD)),
         Span::raw(" Submit  "),
         Span::styled("Esc", Style::new().fg(Color::Red).add_modifier(Modifier::BOLD)),
@@ -50,8 +53,24 @@ fn draw_status_bar(frame: &mut Frame, area: Rect) {
         Span::raw(" Navigate  "),
         Span::styled("Space", Style::new().fg(Color::Yellow)),
         Span::raw(" Select"),
-    ]))
-    .style(DIM_STYLE);
+    ];
+
+    // Scroll indicator when content overflows
+    if content_height > viewport_height {
+        let has_above = app.scroll_offset > 0;
+        let has_below = app.scroll_offset + viewport_height < content_height;
+        let indicator = match (has_above, has_below) {
+            (true, true) => "  ↑↓ more",
+            (true, false) => "  ↑ more above",
+            (false, true) => "  ↓ more below",
+            (false, false) => "",
+        };
+        if !indicator.is_empty() {
+            spans.push(Span::styled(indicator, Style::new().fg(Color::Cyan)));
+        }
+    }
+
+    let bar = Paragraph::new(Line::from(spans)).style(DIM_STYLE);
     frame.render_widget(bar, area);
 }
 
@@ -79,6 +98,7 @@ fn draw_elements_with_offset(
     // We give each element the full remaining viewport height so it can draw everything
     // it needs, then advance virtual_y by its actual returned height.
     let mut virtual_y: i32 = 0;
+    let mut first_visible = true;
 
     for element in elements {
         let when = element_when(element);
@@ -86,10 +106,14 @@ fn draw_elements_with_offset(
             continue;
         }
 
+        // Gap between elements (not before the first)
+        if !first_visible {
+            virtual_y += 1;
+        }
+        first_visible = false;
+
         let top = virtual_y - scroll_offset as i32;
 
-        // Give the element generous height — the full remaining viewport.
-        // The element's own draw function handles internal clipping.
         let screen_y = (area.y as i32 + top).max(area.y as i32);
         let available_height = (area.y as i32 + area.height as i32) - screen_y as i32;
 
@@ -102,15 +126,12 @@ fn draw_elements_with_offset(
             );
 
             let used_height = draw_single_element(frame, remaining, app, element, indent);
-            virtual_y += used_height as i32 + 1; // +1 gap
+            virtual_y += used_height as i32;
         } else if top >= area.height as i32 {
-            // Past the bottom of the viewport — stop drawing
             break;
         } else {
-            // Above the viewport (scrolled past) — still need to advance virtual_y
-            // Use estimate since we can't draw to get actual height
             let est = estimate_single_element_height(element, app, area.width.saturating_sub(indent));
-            virtual_y += est as i32 + 1;
+            virtual_y += est as i32;
         }
     }
 }
@@ -623,14 +644,17 @@ fn estimate_elements_height(elements: &[Element], app: &TuiApp) -> u16 {
 
 fn estimate_elements_height_width(elements: &[Element], app: &TuiApp, width: u16) -> u16 {
     let mut height = 0u16;
+    let mut visible_count = 0u16;
     for element in elements {
         let when = element_when(element);
         if !app.is_element_visible(when) {
             continue;
         }
-        height += estimate_single_element_height(element, app, width) + 1; // +1 gap, matches draw loop
+        height += estimate_single_element_height(element, app, width);
+        visible_count += 1;
     }
-    height
+    // Gaps between elements only (not after the last one)
+    height + visible_count.saturating_sub(1)
 }
 
 /// Estimate the rendered height of a single element given the available width.

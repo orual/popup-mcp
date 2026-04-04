@@ -569,6 +569,7 @@ fn collect_input_widgets_inner(
 
 /// Walk the element tree tracking cumulative virtual y, and when `target_id` is found
 /// set `result` to `(virtual_y, element_height)`. Stops early once found.
+/// Gap logic matches draw_elements_with_offset: gap BETWEEN elements, not after last.
 fn find_element_virtual_y(
     elements: &[Element],
     app: &TuiApp,
@@ -577,6 +578,8 @@ fn find_element_virtual_y(
     virtual_y: &mut u16,
     result: &mut Option<(u16, u16)>,
 ) {
+    let mut first_visible = true;
+
     for element in elements {
         if result.is_some() {
             return;
@@ -587,9 +590,14 @@ fn find_element_virtual_y(
             continue;
         }
 
+        // Gap between elements (not before the first)
+        if !first_visible {
+            *virtual_y += 1;
+        }
+        first_visible = false;
+
         let elem_height = estimate_element_height_for_scroll(element, app, width);
 
-        // Check if this element IS the target (for interactive elements that have an id)
         let elem_id: Option<&str> = match element {
             Element::Slider { id, .. }
             | Element::Input { id, .. }
@@ -604,16 +612,15 @@ fn find_element_virtual_y(
             return;
         }
 
-        // Recurse into children
+        // Recurse into children to find target within nested elements
         let child_y_start = *virtual_y;
         match element {
             Element::Check { id, reveals, .. } => {
-                *virtual_y += 1 + 1; // checkbox line + gap (before children)
+                *virtual_y += 1 + 1; // checkbox line + gap before reveals
                 if app.state.get_boolean(id) {
                     find_element_virtual_y(reveals, app, target_id, width, virtual_y, result);
                 }
-                // Reset virtual_y to after this whole element block
-                *virtual_y = child_y_start + elem_height + 1;
+                *virtual_y = child_y_start + elem_height;
             }
             Element::Select {
                 id,
@@ -622,8 +629,8 @@ fn find_element_virtual_y(
                 reveals,
                 ..
             } => {
-                let list_h = (options.len() as u16).min(20);
-                *virtual_y += 1 + list_h + 1; // label + list + gap
+                let list_h = options.len() as u16;
+                *virtual_y += 1 + list_h; // label + list
                 if let Some(Some(idx)) = app.state.get_choice(id) {
                     if let Some(opt) = options.get(idx) {
                         if let Some(children) = option_children.get(opt.value()) {
@@ -634,7 +641,7 @@ fn find_element_virtual_y(
                 if result.is_none() && app.state.get_choice(id).is_some_and(|c| c.is_some()) {
                     find_element_virtual_y(reveals, app, target_id, width, virtual_y, result);
                 }
-                *virtual_y = child_y_start + elem_height + 1;
+                *virtual_y = child_y_start + elem_height;
             }
             Element::Multi {
                 id,
@@ -643,8 +650,8 @@ fn find_element_virtual_y(
                 reveals,
                 ..
             } => {
-                let list_h = (options.len() as u16).min(20);
-                *virtual_y += 1 + list_h + 1;
+                let list_h = options.len() as u16;
+                *virtual_y += 1 + list_h;
                 if let Some(selections) = app.state.get_multichoice(id) {
                     for (i, &selected) in selections.iter().enumerate() {
                         if selected {
@@ -660,15 +667,15 @@ fn find_element_virtual_y(
                         find_element_virtual_y(reveals, app, target_id, width, virtual_y, result);
                     }
                 }
-                *virtual_y = child_y_start + elem_height + 1;
+                *virtual_y = child_y_start + elem_height;
             }
             Element::Group { elements, .. } => {
-                *virtual_y += 1; // border top + gap
+                *virtual_y += 1; // border top
                 find_element_virtual_y(elements, app, target_id, width, virtual_y, result);
-                *virtual_y = child_y_start + elem_height + 1;
+                *virtual_y = child_y_start + elem_height;
             }
             _ => {
-                *virtual_y += elem_height + 1;
+                *virtual_y += elem_height;
             }
         }
     }

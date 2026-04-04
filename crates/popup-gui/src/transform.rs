@@ -76,7 +76,7 @@ fn inject_other_option(
         // Create text input element
         let text_input_id = format!("{}_other_text", element_id);
         let text_input = Element::Input {
-            input: OTHER_LABEL.to_string(),
+            input: "Please specify".to_string(),
             id: text_input_id,
             placeholder: None,
             rows: None,
@@ -127,7 +127,7 @@ mod tests {
                 match &other_children[0] {
                     Element::Input { id, input, .. } => {
                         assert_eq!(id, "features_other_text");
-                        assert_eq!(input, "Other (please specify)");
+                        assert_eq!(input, "Please specify");
                     }
                     _ => panic!("Expected Input element"),
                 }
